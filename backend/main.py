@@ -58,10 +58,17 @@ def countries():
 
 
 @app.get("/map")
-def map_data(country: str = None):
+def map_data(country: str = None, year_from: int = None, year_to: int = None):
     """Stations with coordinates and average AQI for map display."""
+    filtered = df
+
+    if year_from:
+        filtered = filtered[filtered["date"].dt.year >= year_from]
+    if year_to:
+        filtered = filtered[filtered["date"].dt.year <= year_to]
+
     aqi_avg = (
-        df.groupby("station_id")
+        filtered.groupby("station_id")
         .agg(avg_aqi=("aqi", "mean"), country=("country", "first"))
         .reset_index()
     )
@@ -85,6 +92,7 @@ def station_data(station_id: str):
     cols = ["date", "aqi", "aqi_category", "PM2.5", "PM10", "NO2", "O3"]
     result = sub[cols].sort_values("date").tail(365)
     result["date"] = result["date"].dt.strftime("%Y-%m-%d")
+    result = result.fillna(0)
     return result.to_dict(orient="records")
 
 
