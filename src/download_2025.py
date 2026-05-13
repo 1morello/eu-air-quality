@@ -2,6 +2,7 @@
 
 import airbase
 import shutil
+import time
 import pandas as pd
 from pathlib import Path
 
@@ -18,10 +19,13 @@ def download_and_aggregate(client, country, pollutant):
     output = PROCESSED_DIR / f"{country}_{safe_name}_2025.csv"
 
     if output.exists():
-        print(f"\n--- {country} / {pollutant} --- already done, skipping")
-        return
-
-    print(f"\n--- {country} / {pollutant} ---")
+        age = time.time() - output.stat().st_mtime
+        if age < 86400:
+            print(f"\n--- {country} / {pollutant} --- fresh, skipping")
+            return
+        print(f"\n--- {country} / {pollutant} --- stale, re-downloading")
+    else:
+        print(f"\n--- {country} / {pollutant} ---")
 
     dl_dir = RAW_DIR / "tmp"
     dl_dir.mkdir(parents=True, exist_ok=True)

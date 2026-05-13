@@ -88,6 +88,8 @@ def main():
     print(f"Total rows: {len(df):,}")
 
     # Extract station IDs
+
+    df = df.dropna(subset=["station"])
     df["station_id"] = df["station"].apply(extract_station_id)
 
     # Pivot
