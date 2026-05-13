@@ -1,13 +1,54 @@
-"""EU Air Quality API."""
+"""EU Air Quality API with auto-updating data."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import joblib
 import json
+import threading
+import time
+import subprocess
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# --- Auto-update ---
+
+def data_is_stale():
+    """Check if data is older than 24 hours."""
+    csv_path = ROOT / "data/processed/aqi_dataset_all.csv"
+    if not csv_path.exists():
+        return True
+    mod_time = datetime.fromtimestamp(csv_path.stat().st_mtime)
+    return (datetime.now() - mod_time).total_seconds() > 86400
+
+def refresh_data():
+    """Download and process fresh data, then reload into memory."""
+    global df
+    print("[AUTO-UPDATE] Starting data refresh...")
+    try:
+        subprocess.run(
+            ["python", str(ROOT / "src/download_2025.py")],
+            cwd=str(ROOT), timeout=1800
+        )
+        subprocess.run(
+            ["python", str(ROOT / "src/process_2025.py")],
+            cwd=str(ROOT), timeout=600
+        )
+        df = pd.read_csv(ROOT / "data/processed/aqi_dataset_all.csv")
+        df["date"] = pd.to_datetime(df["date"], format="mixed")
+        print(f"[AUTO-UPDATE] Done. {len(df):,} rows loaded.")
+    except Exception as e:
+        print(f"[AUTO-UPDATE] Failed: {e}")
+
+def auto_update_loop():
+    """Background thread: check every 12 hours, refresh if stale."""
+    time.sleep(10)  # wait for startup
+    while True:
+        if data_is_stale():
+            refresh_data()
+        time.sleep(43200)  # 12 hours
 
 # --- Load data ---
 df = pd.read_csv(ROOT / "data/processed/aqi_dataset_all.csv")
@@ -38,6 +79,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Start background updater
+updater = threading.Thread(target=auto_update_loop, daemon=True)
+updater.start()
 
 
 @app.get("/")
@@ -129,3 +174,12 @@ def predict_station(station_id: str):
         "current_aqi": round(float(last["aqi"]), 1) if pd.notna(last["aqi"]) else None,
         "current_category": last["aqi_category"] if pd.notna(last.get("aqi_category")) else None,
     }
+
+
+@app.get("/reload")
+def reload_data():
+    """Manually reload dataset from disk."""
+    global df
+    df = pd.read_csv(ROOT / "data/processed/aqi_dataset_all.csv")
+    df["date"] = pd.to_datetime(df["date"], format="mixed")
+    return {"status": "reloaded", "rows": len(df)}
